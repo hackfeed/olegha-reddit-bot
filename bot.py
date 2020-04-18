@@ -71,7 +71,7 @@ def send_top(message):
 
     try:
         if not content["is_cat"]:
-            msg = f"🔝 Топ {content['count']} лучших новостей треда" \
+            msg = f"🌟 Топ {content['count']} лучших новостей треда" \
                 f" {content['topic']} за {date[content['time']]}:" + "\n\n"
         bot.send_message(message.chat.id, msg)
         for post in reddit.subreddit(content["topic"]).top(content["time"], limit=content["count"]):
@@ -81,6 +81,7 @@ def send_top(message):
                 description = description[:dot_index]
             else:
                 description = meta.NOINFO_MSG
+
             record = Post(
                 title=post.title,
                 topic=content["topic"],
@@ -88,10 +89,13 @@ def send_top(message):
                 link=post.shortlink,
                 author=post.author.name
             )
-            msg = f"📰 {record.title}\n📰 {record.topic}\n📰 {record.description}\n🔗 {record.link}\n📓 {record.author}\n💯 {post.score}\n\n"
+            msg = f"📰 {record.title}\n📟 {record.topic}\n🧾 {record.description}\n" \
+                f"🔗 {record.link}\n📓 {record.author}\n💯 {post.score}"
+
             dbpost = Post.objects(link=record.link)
             if not dbpost:
                 record.save()
+
             markup = telebot.types.InlineKeyboardMarkup()
             markup.add(telebot.types.InlineKeyboardButton(
                 text="Добавить в закладки", callback_data="add" + record.link))
@@ -101,14 +105,43 @@ def send_top(message):
         bot.send_message(message.chat.id, msg)
 
 
+@bot.message_handler(commands=["bookmarks"])
+def show_bookmarks(message):
+    user = User.objects(user_id=message.chat.id).first()
+    for bookmark in user.bookmarks:
+        record = Post.objects(link=bookmark).first()
+        msg = f"📰 {record.title}\n📟 {record.topic}\n🧾 {record.description}\n" \
+            f"🔗 {record.link}\n📓 {record.author}\n"
+        markup = telebot.types.InlineKeyboardMarkup()
+        markup.add(telebot.types.InlineKeyboardButton(
+            text="Удалить из закладок", callback_data="del" + record.link))
+        bot.send_message(message.chat.id, msg, reply_markup=markup)
+
+
 @bot.callback_query_handler(lambda call: call.data.startswith("add"))
 def add_to_bookmarks(call):
     bot.answer_callback_query(call.id)
     link = call.data[3:]
     user = User.objects(user_id=call.message.chat.id).first()
-    user.bookmarks.append(link)
-    user.save()
-    bot.send_message(call.message.chat.id, "Закладка на пост " + link + " добавлена!")
+    if link not in user.bookmarks:
+        user.bookmarks.append(link)
+        user.save()
+        bot.send_message(call.message.chat.id, "🔖 Закладка на пост " + link + " добавлена!")
+    else:
+        bot.send_message(call.message.chat.id, "📖 Пост " + link + " уже находится в закладках!")
+
+
+@bot.callback_query_handler(lambda call: call.data.startswith("del"))
+def del_from_bookmarks(call):
+    bot.answer_callback_query(call.id)
+    link = call.data[3:]
+    user = User.objects(user_id=call.message.chat.id).first()
+    if link in user.bookmarks:
+        user.bookmarks.remove(link)
+        user.save()
+        bot.send_message(call.message.chat.id, "❌ Закладка на пост " + link + " удалена!")
+    else:
+        bot.send_message(call.message.chat.id, "📛 Пост " + link + " уже не находится в закладках!")
 
 
 if __name__ == "__main__":
