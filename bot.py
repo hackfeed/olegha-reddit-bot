@@ -3,9 +3,11 @@ import os
 import telebot
 import praw
 import prawcore
+import mongoengine
 from dotenv import load_dotenv
 
 import meta
+from models import Post, User
 
 load_dotenv()
 
@@ -18,6 +20,13 @@ reddit = praw.Reddit(client_id=os.getenv("CLIENT_ID"),
 
 @bot.message_handler(commands=["start"])
 def send_welcome(message):
+    user = User.objects(user_id=message.chat.id)
+    if user:
+        bot.send_message(message.chat.id, meta.REGISTERED_MSG)
+        return
+
+    user = User(user_id=message.chat.id, bookmarks=[])
+    user.save()
     bot.send_message(message.chat.id, meta.START_MSG)
 
 
@@ -62,15 +71,46 @@ def send_top(message):
 
     try:
         if not content["is_cat"]:
-            msg += f"🔝 Топ {content['count']} лучших новостей треда" \
+            msg = f"🔝 Топ {content['count']} лучших новостей треда" \
                 f" {content['topic']} за {date[content['time']]}:" + "\n\n"
+        bot.send_message(message.chat.id, msg)
         for post in reddit.subreddit(content["topic"]).top(content["time"], limit=content["count"]):
-            msg += f"📰 {post.title}\n🔗 {post.url}\n📓 {post.author.name}\n💯 {post.score}\n\n"
+            if post.selftext:
+                description = post.selftext[:400]
+                dot_index = description.rindex(".") + 1
+                description = description[:dot_index]
+            else:
+                description = meta.NOINFO_MSG
+            record = Post(
+                title=post.title,
+                topic=content["topic"],
+                description=description,
+                link=post.shortlink,
+                author=post.author.name
+            )
+            msg = f"📰 {record.title}\n📰 {record.topic}\n📰 {record.description}\n🔗 {record.link}\n📓 {record.author}\n💯 {post.score}\n\n"
+            dbpost = Post.objects(link=record.link)
+            if not dbpost:
+                record.save()
+            markup = telebot.types.InlineKeyboardMarkup()
+            markup.add(telebot.types.InlineKeyboardButton(
+                text="Добавить в закладки", callback_data="add" + record.link))
+            bot.send_message(message.chat.id, msg, reply_markup=markup)
     except (prawcore.exceptions.NotFound, prawcore.exceptions.Redirect, prawcore.exceptions.Forbidden):
         msg = meta.ERR_MSG
+        bot.send_message(message.chat.id, msg)
 
-    bot.send_message(message.chat.id, msg)
+
+@bot.callback_query_handler(lambda call: call.data.startswith("add"))
+def add_to_bookmarks(call):
+    bot.answer_callback_query(call.id)
+    link = call.data[3:]
+    user = User.objects(user_id=call.message.chat.id).first()
+    user.bookmarks.append(link)
+    user.save()
+    bot.send_message(call.message.chat.id, "Закладка на пост " + link + " добавлена!")
 
 
 if __name__ == "__main__":
+    mongoengine.connect(host=os.getenv("DB_HOST"))
     bot.polling(none_stop=True)
