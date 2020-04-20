@@ -108,6 +108,8 @@ def send_top(message):
 @bot.message_handler(commands=["bookmarks"])
 def show_bookmarks(message):
     user = User.objects(user_id=message.chat.id).first()
+    if user.bookmarks == []:
+        bot.send_message(message.chat.id, meta.NOBOOKMARKS_MSG)
     for bookmark in user.bookmarks:
         record = Post.objects(link=bookmark).first()
         msg = f"📰 {record.title}\n📟 {record.topic}\n🧾 {record.description}\n" \
@@ -126,9 +128,9 @@ def add_to_bookmarks(call):
     if link not in user.bookmarks:
         user.bookmarks.append(link)
         user.save()
-        bot.send_message(call.message.chat.id, "🔖 Закладка на пост " + link + " добавлена!")
+        bot.send_message(call.message.chat.id, f"🔖 Олег добавил закладку на {link}.")
     else:
-        bot.send_message(call.message.chat.id, "📖 Пост " + link + " уже находится в закладках!")
+        bot.send_message(call.message.chat.id, f"📖 Олег уже добавлял {link} в закладки.")
 
 
 @bot.callback_query_handler(lambda call: call.data.startswith("del"))
@@ -139,9 +141,10 @@ def del_from_bookmarks(call):
     if link in user.bookmarks:
         user.bookmarks.remove(link)
         user.save()
-        bot.send_message(call.message.chat.id, "❌ Закладка на пост " + link + " удалена!")
+        bot.send_message(call.message.chat.id, f"❌ Олег удалил закладку на {link}.")
     else:
-        bot.send_message(call.message.chat.id, "📛 Пост " + link + " уже не находится в закладках!")
+        bot.send_message(call.message.chat.id, f"📛 Олег не может удалить {link} из закладок. "
+                         "Возможно, Олег сделал это ранее.")
 
 
 if __name__ == "__main__":
